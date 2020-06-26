@@ -1,0 +1,12 @@
+BubbleBobble-Nes:
+    n_envs: 16
+    n_steps: 32
+    gamma: 0.99
+    lmbda: 0.95
+    learning_rate: 0.0007
+    grad_clip_norm: 0.5
+    value_coef: 0.5
+    entropy_coef: 0.01
+    normalize_adv: True
+    use_gae: True
+    scale_reward: False
