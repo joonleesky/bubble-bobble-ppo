@@ -1,4 +1,5 @@
 from .base_agent import BaseAgent
+from common.misc_util import adjust_lr
 import torch
 import torch.optim as optim
 import torch.nn.functional as F
@@ -133,7 +134,7 @@ class PPO(BaseAgent):
             self.logger.feed(rew_batch, done_batch)
             self.logger.write_summary(summary)
             self.logger.dump()
-            print(self.t)
+            self.optimizer = adjust_lr(self.optimizer,self.learning_rate,self.t,num_timesteps)
             # Save the model
             if self.t > ((checkpoint_cnt+1) * save_every):
                 torch.save({'state_dict': self.policy.state_dict()}, self.logger.logdir +

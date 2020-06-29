@@ -89,7 +89,6 @@ def play(env, transpose=True, fps=30, zoom=None, callback=None, keys_to_action=N
             env_done = False
             obs = env.reset()
         else:
-            #action = keys_to_action.get(tuple(sorted(pressed_keys)), 6)
             action = env.action_space.sample()
             prev_obs = obs
             obs, rew, env_done, info = env.step(action)
@@ -123,7 +122,7 @@ def main():
     args = parser.parse_args()
     env = retro.make(args.env, use_restricted_actions=retro.Actions.DISCRETE, state="Level01")
     env = wrap_deepmind(env)
-    play(env, zoom=4, fps=200)
+    play(env, zoom=4, fps=60)
 
 
 if __name__ == '__main__':

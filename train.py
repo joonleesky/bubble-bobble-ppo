@@ -33,9 +33,9 @@ def create_agent(exp_name, env_name, algo, hyperparameters, device, seed, num_ch
                 self.env_name = env_name
 
             def __call__(self, *args, **kwargs):
-                rand_level = str(random.randint(1, 99))
-                state = 'Level' + (2-len(rand_level)) * '0' + rand_level
-                env = retro.make(self.env_name, use_restricted_actions=retro.Actions.DISCRETE, state=state)
+                #rand_level = str(random.randint(1, 49))
+                #state = 'Level' + (2-len(rand_level)) * '0' + rand_level
+                env = retro.make(self.env_name, use_restricted_actions=retro.Actions.DISCRETE)
                 env = wrap_deepmind(env)
                 return env
 
@@ -130,7 +130,6 @@ def create_agent(exp_name, env_name, algo, hyperparameters, device, seed, num_ch
     return AGENT(env, policy, logger, storage, device, num_checkpoints, **agent_hyperparameters)
 
 
-    
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--exp_name',       type=str, default = 'test', help='experiment name')
@@ -139,7 +138,7 @@ if __name__=='__main__':
     parser.add_argument('--algo',           type=str, default = 'ppo', help='[a2c, ppo]')
     parser.add_argument('--device',         type=str, default = 'gpu', required = False, help='whether to use gpu')
     parser.add_argument('--gpu_device',     type=int, default = int(0), required = False, help = 'visible device in CUDA')
-    parser.add_argument('--num_timesteps',  type=int, default = int(50000000), help = 'overwrite the number of training timesteps')
+    parser.add_argument('--num_timesteps',  type=int, default = int(100000000), help = 'overwrite the number of training timesteps')
     parser.add_argument('--seed',           type=int, default = random.randint(0,9999), help='Random generator seed')
     parser.add_argument('--log_level',      type=int, default = int(40), help='[10,20,30,40]')
     parser.add_argument('--num_checkpoints',type=int, default = int(10), help='number of checkpoints to store')

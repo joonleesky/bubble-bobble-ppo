@@ -3,17 +3,17 @@ from multiprocessing import Pool
 
 if __name__=='__main__':
     experiments = [
-        {'--exp_name': 'baseline',
+        {'--exp_name': 'baseline-sequential',
          '--param_name': 'BubbleBobble-Nes-Nature',
          '--gpu_device': '0'},
-        {'--exp_name': 'shift',
-         '--param_name': 'BubbleBobble-Nes-Nature-Shift',
+        {'--exp_name': 'slow-sequential',
+         '--param_name': 'BubbleBobble-Nes-Nature-Slow',
          '--gpu_device': '1'},
-        {'--exp_name': 'scale',
-         '--param_name': 'BubbleBobble-Nes-Nature-Scale',
+        {'--exp_name': 'shift-sequential',
+         '--param_name': 'BubbleBobble-Nes-Nature-Shift',
          '--gpu_device': '2'},
-        {'--exp_name': 'shift_scale',
-         '--param_name': 'BubbleBobble-Nes-Nature-Shift-Scale',
+        {'--exp_name': 'slow-shift-sequential',
+         '--param_name': 'BubbleBobble-Nes-Nature-Slow-Shift',
          '--gpu_device': '3'},
     ]
     def run_experiment(experiment):

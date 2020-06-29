@@ -6,14 +6,11 @@ def worker(worker_id, env_fn, master_end, worker_end):
     master_end.close()  # Forbid worker to use the master end for messaging
     env = env_fn()
     env.seed(worker_id)
-    
     while True:
         cmd, data = worker_end.recv()
         if cmd == 'step':
             ob, reward, done, info = env.step(data)
             if done:
-                env.close()
-                env = env_fn()
                 ob = env.reset()
             worker_end.send((ob, reward, done, info))
         elif cmd == 'seed':
