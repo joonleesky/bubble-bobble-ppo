@@ -7,15 +7,12 @@ from common.policy import CategoricalPolicy, DiagGaussianPolicy
 from common import set_global_seeds, set_global_log_levels
 
 import os, time, yaml, argparse
-import gym, atari_py, retro
+import gym, retro
 import random
 import torch
 
 
-def create_agent(exp_name, env_name, algo, hyperparameters, device, seed, num_checkpoints):
-    model_hyperparameters = hyperparameters.pop('model', {})
-    agent_hyperparameters = hyperparameters
-
+def create_agent(exp_name, env_name, hyperparameters, device, seed, num_checkpoints):
     # Choose the 'cuda' or 'cpu' device
     if device == 'cpu':
         device = torch.device("cpu")
@@ -25,7 +22,7 @@ def create_agent(exp_name, env_name, algo, hyperparameters, device, seed, num_ch
     #################
     ## Environment ##
     #################
-    def create_env(env_name, algo, n_envs):
+    def create_env(env_name, n_envs):
         # Different from atari environment, environment could not be pickled
         # Therefore, environment should be initialized separately in subprocess
         class EnvFnWrapper():
@@ -33,8 +30,6 @@ def create_agent(exp_name, env_name, algo, hyperparameters, device, seed, num_ch
                 self.env_name = env_name
 
             def __call__(self, *args, **kwargs):
-                #rand_level = str(random.randint(1, 49))
-                #state = 'Level' + (2-len(rand_level)) * '0' + rand_level
                 env = retro.make(self.env_name, use_restricted_actions=retro.Actions.DISCRETE)
                 env = wrap_deepmind(env)
                 return env
@@ -43,99 +38,89 @@ def create_agent(exp_name, env_name, algo, hyperparameters, device, seed, num_ch
         env = SubprocVecEnv(n_envs, env_fn)
         return env
 
+    print('INITIALIZAING ENVIRONMENTS...')
     n_steps = hyperparameters.get('n_steps', 5)
     n_envs = hyperparameters.get('n_envs', 16)
-    env = create_env(env_name, algo, n_envs)
-    ############
-    ## Logger ##
-    ############
-    def create_logger(exp_name, env_name, algo, n_envs, seed):
-        logdir = env_name + '/' + algo + '/' + exp_name + '/' + 'seed' + '_' + str(seed)  + '_' + time.strftime("%d-%m-%Y_%H-%M-%S")
+    env = create_env(env_name, n_envs)
+    print('DONE!')
+
+    ######################
+    ## Logger & STORAGE ##
+    ######################
+    def create_logger(exp_name, env_name, n_envs, seed):
+        logdir = env_name + '/' + '/' + exp_name + '/' + 'seed' + '_' + str(seed)  + '_' + time.strftime("%d-%m-%Y_%H-%M-%S")
         logdir = os.path.join('logs', logdir)
         if not(os.path.exists(logdir)):
             os.makedirs(logdir)
         return Logger(n_envs, logdir)
 
-    logger = create_logger(exp_name, env_name, algo, n_envs, seed)
-
-    #############
-    ## Storage ##
-    #############
     def create_stroage(env, n_steps, n_envs, device):
         observation_space = env.observation_space
         observation_shape = observation_space.shape
         return Storage(observation_shape, n_steps, n_envs, device)
 
+    print('INITIALIZAING LOGGER & STORAGE...')
+    logger = create_logger(exp_name, env_name, n_envs, seed)
+    with open(logger.logdir + '/config.yml', 'w') as f:
+        yaml.dump(hyperparameters, f)
     storage = create_stroage(env, n_steps, n_envs, device)
+    print('DONE!')
 
     ###########
     ## Model ##
     ###########
-    def create_embedder(env, architecture='nature', model_hyperparameters={}):
+    def create_model(env, architecture='nature'):
         observation_space = env.observation_space
         observation_shape = observation_space.shape
-        
-        if len(observation_shape) == 3:
-            model_type = 'conv'
-        elif len(observation_shape) == 1:
-            model_type = 'mlp'
-        else:
-            raise NotImplementedError
-            
-        def build_model(model_type, architecture, observation_shape, model_hyperparameters):
-            if model_type == 'mlp':
-                return MlpModel(input_dims = observation_shape[0],
-                                **model_hyperparameters)
-            elif model_type == 'conv':
-                if architecture == 'nature':
-                    return NatureModel(in_channels=observation_shape[0])
-                elif architecture == 'impala':
-                    return ImpalaModel(in_channels=observation_shape[0])
 
-        return build_model(model_type, architecture, observation_shape, model_hyperparameters)
+        if architecture == 'nature':
+            return NatureModel(in_channels=observation_shape[0])
+        elif architecture == 'impala':
+            return ImpalaModel(in_channels=observation_shape[0])
     
-    def create_policy(env, embedder):
+    def create_policy(env, model):
         # Build policy with the corresponding action space
         action_space = env.action_space
 
         # Discrete action space
         if isinstance(action_space, gym.spaces.Discrete):
             action_size = action_space.n
-            policy = CategoricalPolicy(embedder, action_size)
+            policy = CategoricalPolicy(model, action_size)
 
         # Continuous action space
         elif isinstance(action_space, gym.spaces.Box):
             action_size = action_space.shape[0]
             low = action_space.low[0]
             high = action_space.high[0]
-            policy = DiagGaussianPolicy(embedder, action_size, (low, high))
+            policy = DiagGaussianPolicy(model, action_size, (low, high))
 
         else: 
             raise NotImplementedError
         return policy
 
+    print('INITIALIZAING MODEL...')
     architecture = hyperparameters.get('architecture', 'nature')
-    embedder = create_embedder(env, architecture, model_hyperparameters)
-    policy = create_policy(env, embedder)
+    model = create_model(env, architecture)
+    policy = create_policy(env, model)
     policy.to(device)
-
+    print('DONE!')
     ###########
     ## AGENT ##
     ###########
-    if algo == 'a2c':
-        from agents.a2c import A2C as AGENT
-    elif algo == 'ppo':
+    algo = hyperparameters.get('algo', 'ppo')
+    if algo == 'ppo':
         from agents.ppo import PPO as AGENT
+    else:
+        raise NotImplementedError
 
-    return AGENT(env, policy, logger, storage, device, num_checkpoints, **agent_hyperparameters)
+    return AGENT(env, policy, logger, storage, device, num_checkpoints, **hyperparameters)
 
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--exp_name',       type=str, default = 'test', help='experiment name')
     parser.add_argument('--env_name',       type=str, default = 'BubbleBobble-Nes', help='environment ID')
-    parser.add_argument('--param_name',     type=str, default = 'BubbleBobble-Nes-Nature', help='hyper-parameter ID')
-    parser.add_argument('--algo',           type=str, default = 'ppo', help='[a2c, ppo]')
+    parser.add_argument('--param_name',     type=str, default = 'baseline', help='hyper-parameter ID')
     parser.add_argument('--device',         type=str, default = 'gpu', required = False, help='whether to use gpu')
     parser.add_argument('--gpu_device',     type=int, default = int(0), required = False, help = 'visible device in CUDA')
     parser.add_argument('--num_timesteps',  type=int, default = int(100000000), help = 'overwrite the number of training timesteps')
@@ -147,7 +132,6 @@ if __name__=='__main__':
     exp_name = args.exp_name
     env_name = args.env_name
     param_name = args.param_name
-    algo = args.algo
     device = args.device
     gpu_device = args.gpu_device
     num_timesteps = args.num_timesteps
@@ -161,7 +145,13 @@ if __name__=='__main__':
     ##############
     ## Training ##
     ##############
-    with open('./hyperparams/' + algo + '.yml', 'r') as f:
+    print('LOADING HYPERPARAMETERS...')
+    with open('./hyperparams/config.yml', 'r') as f:
         hyperparameters = yaml.safe_load(f)[param_name]
-    agent = create_agent(exp_name, env_name, algo, hyperparameters, device, seed, num_checkpoints)
+    for key, value in hyperparameters.items():
+        print(key, ':', value)
+    print('DONE!')
+    agent = create_agent(exp_name, env_name, hyperparameters, device, seed, num_checkpoints)
+    print('START TRAINING...')
     agent.train(num_timesteps)
+    print('DONE!')

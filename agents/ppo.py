@@ -2,9 +2,6 @@ from .base_agent import BaseAgent
 from common.misc_util import adjust_lr
 import torch
 import torch.optim as optim
-import torch.nn.functional as F
-import numpy as np
-
 
 class PPO(BaseAgent):
     def __init__(self,
@@ -127,7 +124,6 @@ class PPO(BaseAgent):
 
             # Optimize policy & value
             summary = self.optimize()
-
             # Log the training-procedure
             self.t += self.n_steps * self.n_envs
             rew_batch, done_batch = self.storage.fetch_log_data()

@@ -58,6 +58,7 @@ class Logger(object):
         # TODO: logger to append, not write!
         with open(self.logdir + '/log.csv', 'w') as f:
             self.log.to_csv(f, index = False)
+        print(self.log.loc[len(self.log)-1])
 
     def _get_episode_statistics(self):
         episode_statistics = {}

@@ -1,11 +1,12 @@
 from common.env.atari_wrappers import wrap_deepmind
 from common.model import MlpModel, NatureModel, ImpalaModel
 from common.policy import CategoricalPolicy
-from common import set_global_seeds, set_global_log_levels
+from common import set_global_seeds
 
-import pygame
-import os, time, yaml, argparse
-import gym, atari_py, retro
+import numpy as np
+import pygame, cv2
+import os, time, yaml, argparse, random
+import retro
 import torch
 
 def display_arr(screen, arr, video_size, transpose):
@@ -14,110 +15,97 @@ def display_arr(screen, arr, video_size, transpose):
     pyg_img = pygame.surfarray.make_surface(arr.swapaxes(0, 1) if transpose else arr)
     pyg_img = pygame.transform.scale(pyg_img, video_size)
     screen.blit(pyg_img, (0, 0))
+    return pygame.surfarray.array3d(pyg_img)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--exp_name', type=str, default='slow-49', help='experiment name')
-    parser.add_argument('--env_name', type=str, default='BubbleBobble-Nes', help='environment ID')
-    parser.add_argument('--param_name', type=str, default = 'BubbleBobble-Nes-Nature', help='hyper-parameter ID')
-    parser.add_argument('--checkpoint', type=str, default='20000768', help='checkpoint number to load')
-    parser.add_argument('--algo',       type=str, default = 'ppo', help='[a2c, ppo]')
+    parser.add_argument('--env_name', type=str, default = 'BubbleBobble-Nes', help='environment ID')
+    parser.add_argument('--log_path', type=str, default='./logs/BubbleBobble-Nes/baseline')
+    parser.add_argument('--checkpoint', type=str, default='100000000', help='model checkpoint to load')
+    parser.add_argument('--device',  type=str, default = 'gpu', required = False, help='whether to use gpu')
+    parser.add_argument('--seed', type=int, default = random.randint(0,9999), help='Random generator seed')
 
     args = parser.parse_args()
-    exp_name = args.exp_name
     env_name = args.env_name
-    param_name = args.param_name
+    log_path = args.log_path
     checkpoint = args.checkpoint
-    algo = args.algo
-    device = torch.device("cpu")
-    dir_path = './logs/' + env_name + '/' + algo + '/' + exp_name
-    model_dir = os.path.join(dir_path, os.listdir(dir_path)[0])
-    model_path = model_dir + '/model_' + checkpoint + '.pth'
+    device = args.device
+    seed = args.seed
+    model_path = log_path + '/model_' + checkpoint + '.pth'
+    set_global_seeds(seed)
 
+    with open(log_path + '/config.yml', 'r') as f:
+        hyperparameters = yaml.safe_load(f)
 
-    #########
-    ## Env ##
-    #########
-    with open('./hyperparams/' + algo + '.yml', 'r') as f:
-        hyperparameters = yaml.safe_load(f)[param_name]
-    model_hyperparameters = hyperparameters.pop('model', {})
-    agent_hyperparameters = hyperparameters
+    # Designate device
+    if device == 'cpu':
+        device = torch.device("cpu")
+    elif device == 'gpu':
+        device = torch.device('cuda')
 
+    # Initialize Environment
     env = retro.make(env_name, use_restricted_actions=retro.Actions.DISCRETE)
     env = wrap_deepmind(env)
+    env.seed(seed)
 
-    ###########
-    ## Model ##
-    ###########
+    # Initialize Model
     observation_space = env.observation_space
     observation_shape = observation_space.shape
     action_space = env.action_space
     action_size = action_space.n
     architecture = hyperparameters.get('architecture', 'nature')
-
-    if len(observation_shape) == 3:
-        if architecture == 'nature':
-            embedder = NatureModel(in_channels=observation_shape[0])
-        elif architecture == 'impala':
-            embedder = ImpalaModel(in_channels=observation_shape[0])
-    elif len(observation_shape) == 1:
-        embedder = MlpModel(input_dims=observation_shape[0],
-                                **model_hyperparameters)
-
+    if architecture == 'nature':
+        embedder = NatureModel(in_channels=observation_shape[0])
+    elif architecture == 'impala':
+        embedder = ImpalaModel(in_channels=observation_shape[0])
     policy = CategoricalPolicy(embedder, action_size)
     saved_model = torch.load(model_path)
     policy.load_state_dict(saved_model['state_dict'])
     policy.to(device)
     policy.eval()
 
-    ###########
-    ## AGENT ##
-    ###########
-    if algo == 'a2c':
-        from agents.a2c import A2C as AGENT
-    elif algo == 'ppo':
+    #Initialize Agent
+    if hyperparameters['algo'] == 'ppo':
         from agents.ppo import PPO as AGENT
+    else:
+        raise NotImplementedError
+    agent = AGENT(env, policy, None, None, device, 0, **hyperparameters)
 
-    agent = AGENT(env, policy, None, None, device, 0, **agent_hyperparameters)
+    # Pygame Configurations
+    zoom = 4
+    fps = 40
+    transpose = True
+    rendered = env.render(mode='rgb_array')
+    video_size = [rendered.shape[1], rendered.shape[0]]
+    video_size = int(video_size[0] * zoom), int(video_size[1] * zoom)
+    screen = pygame.display.set_mode(video_size)
+    clock = pygame.time.Clock()
 
-    ##############
-    ## EVALUATE ##
-    ##############
-    stages = ['01','11','21','31','41','51','61','71','81','91']
-    for stage in stages:
-        env.close()
-        level = 'Level' + stage
-        env = retro.make(env_name, use_restricted_actions=retro.Actions.DISCRETE, state=level)
-        env = wrap_deepmind(env, episode_life=False)
-        obs = env.reset()
-        done = False
-        lives = 3
+    # Evaluation
+    obs = env.reset()
+    total_rewards = 0
+    images = []
+    while True:
+        obs = torch.FloatTensor(obs).unsqueeze(0).to(device=device)
+        act = policy.action(obs)
+        next_obs, rew, done, info = env.step(act)
+        obs = next_obs
+        total_rewards += rew
 
-        rendered = env.render(mode='rgb_array')
-        zoom = 4
-        fps = 50
-        transpose = True
-        video_size = [rendered.shape[1], rendered.shape[0]]
-        video_size = int(video_size[0] * zoom), int(video_size[1] * zoom)
-        screen = pygame.display.set_mode(video_size)
-        clock = pygame.time.Clock()
+        if obs is not None:
+            rendered = env.render(mode='rgb_array')
+            image = display_arr(screen, rendered, transpose=transpose, video_size=video_size)
+            images.append(image)
 
-        while True:
-            obs = torch.FloatTensor(obs).unsqueeze(0).to(device=device)
-            act = policy.action(obs)
-            next_obs, rew, done, info = env.step(act)
-            obs = next_obs
+        pygame.display.flip()
+        clock.tick(fps)
+        if info['lives'] == 0:
+            break
 
-            if obs is not None:
-                rendered = env.render(mode='rgb_array')
-                display_arr(screen, rendered, transpose=transpose, video_size=video_size)
-            print(info)
-            if info['enemies'] == 0:
-                print(info)
-                break
-            if done == True:
-                print(info)
-                break
-
-            pygame.display.flip()
-            clock.tick(fps)
+    # Write video
+    out = cv2.VideoWriter('project.avi', cv2.VideoWriter_fourcc(*'DIVX'), 30, video_size, True)
+    for image in images:
+        image = np.transpose(image, (1,0,2))
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        out.write(image)
+    out.release()

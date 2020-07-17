@@ -279,11 +279,8 @@ class TransposeFrame(gym.ObservationWrapper):
 
 class BubbleBobbleAction(gym.Wrapper):
     def __init__(self, env):
-        """Stack k last frames.
-        Returns lazy array, which is much more memory efficient.
-        See Also
-        --------
-        baselines.common.atari_wrappers.LazyFrames
+        """
+        Eliminate the duplicated action in Bubble-Bobble
         """
         gym.Wrapper.__init__(self, env)
         self.action_space = spaces.Discrete(12)
@@ -291,38 +288,6 @@ class BubbleBobbleAction(gym.Wrapper):
     def step(self, action):
         action = int(action * 3)
         return self.env.step(action)
-
-class BubbleBobbleFrameSkip(gym.Wrapper):
-    def __init__(self, env, skip=2):
-        """Return only every `skip`-th frame"""
-        gym.Wrapper.__init__(self, env)
-        # most recent raw observations (for max pooling across time steps)
-        self._obs_buffer = np.zeros((2,) + env.observation_space.shape, dtype=np.uint8)
-        self._skip = skip
-
-    def step(self, action):
-        """Repeat action, sum reward, and max over last observations."""
-        total_reward = 0.0
-        done = None
-        for i in range(self._skip):
-            if (i % 2) == 0:
-                act = action
-            else:
-                if (action != 1) and (action != 2):
-                    act = 0
-            obs, reward, done, info = self.env.step(act)
-            if i == self._skip - 2: self._obs_buffer[0] = obs
-            if i == self._skip - 1: self._obs_buffer[1] = obs
-            total_reward += reward
-            if done:
-                break
-        # Note that the observation on the done=True frame
-        # doesn't matter
-        max_frame = self._obs_buffer.max(axis=0)
-        return max_frame, total_reward, done, info
-
-    def reset(self, **kwargs):
-        return self.env.reset(**kwargs)
 
 
 def wrap_deepmind(env, episode_life=True, preprocess=True, max_and_skip=True,
@@ -332,12 +297,10 @@ def wrap_deepmind(env, episode_life=True, preprocess=True, max_and_skip=True,
         env = EpisodicLifeEnv(env)
     if no_op_reset:
         env = NoopResetEnv(env)
+    if bubble_bobble:
+        env = BubbleBobbleAction(env)
     if max_and_skip:
-        if bubble_bobble:
-            env = BubbleBobbleAction(env)
-            env = BubbleBobbleFrameSkip(env)
-        else:
-            env = MaxAndSkipEnv(env)
+        env = MaxAndSkipEnv(env)
     if preprocess:
         env = WarpFrame(env)
     if clip_rewards:
