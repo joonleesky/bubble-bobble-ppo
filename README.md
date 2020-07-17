@@ -35,7 +35,7 @@ Use `train.py` to train the agent in Bubble-Bobble. It has the following argumen
 - `--param_name`: Configurations name for your training. By default, the training loads hyperparameters from `hyperparams.config.yml/baseline`.
 - `--num_timesteps`: Number of total timesteps to train your agent.
 
-After you start training your agent, log and parameters are automatically stored in `logs/env-name/exp-name/
+After you start training your agent, log and parameters are automatically stored in `logs/env-name/exp-name/`.
 
 ## Evaluation
 
